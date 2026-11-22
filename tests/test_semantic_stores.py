@@ -6,6 +6,7 @@ a dev dependency, so CI runs it) and on the Chroma store (skipped unless
 downloaded.
 """
 
+import gc
 import os
 import sqlite3
 import sys
@@ -422,7 +423,10 @@ def test_an_index_made_before_the_rule_is_made_private(tmp_path: Path) -> None:
 
 
 def test_a_refused_open_closes_its_connection(tmp_path: Path) -> None:
-    _sqlite(tmp_path).reset(MODEL)
+    owner = _sqlite(tmp_path)
+    owner.reset(MODEL)
+    del owner  # the owner's own connection closes with it
+    gc.collect()
     for _ in range(3):
         with pytest.raises(IndexOwnedElsewhereError):
             stores.build_vector_index(OTHER, "sqlite-vec", tmp_path)
