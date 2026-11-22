@@ -32,7 +32,9 @@ import second_brain_core
 assert os.environ["FASTMCP_ENV_FILE"] == os.devnull, "the package did not pin FASTMCP_ENV_FILE"
 print("ok    importing the package pins FastMCP's env file")
 names = ["annotations", "audit", "auth", "env", "errors", "failure", "health", "recent",
-         "remote", "server", "testing"]
+         "remote", "server", "testing", "semantic.chunking", "semantic.engine",
+         "semantic.embedders", "semantic.stores", "semantic.sync", "semantic.testing",
+         "semantic.types"]
 for name in names:
     importlib.import_module(f"second_brain_core.{name}")
 print(f"ok    every module imports: {len(names)}")
@@ -59,6 +61,16 @@ async def call() -> str:
 
 assert asyncio.run(call()) == "hello"
 print("ok    a server built on the shared middleware answers a tool call")
+
+from second_brain_core.errors import SemanticUnavailableError
+from second_brain_core.semantic.embedders import build_embedder
+try:
+    build_embedder(server, "fastembed")
+except SemanticUnavailableError as exc:
+    assert "smoke-server[semantic]" in str(exc), str(exc)
+    print("ok    without the semantic extra, building an embedder says what to install")
+else:
+    print("info  the semantic extra is installed")
 print(f"info  second-brain-core {second_brain_core.__version__} on Python {sys.version.split()[0]}")
 """
 

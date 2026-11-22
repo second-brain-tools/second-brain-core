@@ -22,6 +22,7 @@ way lives here, written and tested once.
 | `recent` | A short memory of what a write answered, so a repeated request writes nothing new. |
 | `annotations` | The tool annotations every server uses the same way. |
 | `testing` | Security regression checks each server runs against itself in its own CI. |
+| `semantic` | **The `semantic` extra:** search by meaning, and by words, over a server's items. The server supplies a `Source`; the `Engine` keeps the index in step and searches it, returning only what the source says is visible now. Stores: sqlite-vec (the default, with an FTS5 word index) and Chroma. `semantic.testing` has in-memory stand-ins for tests. |
 
 ## Using it in a server
 
@@ -46,6 +47,18 @@ Then build the server with `remote.build_middleware(SERVER, ...)` and
 `mask_error_details=True`, end every tool with `failure.tool_error` for the failures
 it plans for and `failure.unexpected` for the rest, and serve with
 `remote.run_stdio` or `remote.run_http`.
+
+## Search by meaning
+
+```bash
+pip install "second-brain-core[semantic]"            # sqlite-vec + FastEmbed (the default)
+pip install "second-brain-core[semantic,semantic-chroma]"   # the Chroma store
+pip install "second-brain-core[semantic,semantic-st]"       # sentence-transformers models
+```
+
+A server re-exports these as its own extras. Each server keeps **its own index
+directory**: the index file records which server owns it and refuses another. The
+embedding runtime has no build for Python 3.15 yet, so the extra needs 3.11 to 3.14.
 
 ## Releasing
 

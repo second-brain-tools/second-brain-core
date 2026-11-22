@@ -86,8 +86,12 @@ addopts = "--cov=second_brain_core --cov-report=term-missing"
 [tool.coverage.run]
 branch = true
 source = ["second_brain_core"]
-# The embedders need a model download and are only type-checked by mypy.
-omit = ["*/semantic/embedders.py"]
+# The embedders need a model download and are only type-checked by mypy. The stores
+# need the optional extras and, for sqlite-vec, a Python that loads SQLite
+# extensions (GitHub's macOS Python doesn't), so the figure would change from one
+# runner to the next: tests/test_semantic_stores.py runs them instead, sqlite-vec in
+# every test job and Chroma in its own (see checks.yml).
+omit = ["*/semantic/embedders.py", "*/semantic/stores.py"]
 
 [tool.mypy]
 python_version = "3.11"

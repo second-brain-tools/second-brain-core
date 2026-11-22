@@ -35,6 +35,14 @@ has them:
   exception's text can quote what was being processed, so neither the client nor the
   log gets it.
 
+- **Search by meaning shows only what the server shows.** An index is a file other
+  processes can write, so with a filter active every search asks the server which items
+  are visible now and returns only those, whatever the index holds. An item that
+  becomes hidden leaves the index at the next sync, before anything new is embedded.
+- **An index holds the indexed text unencrypted**, in the server's index directory
+  (created private, 0700, where the system has modes). Each server's docs say where.
+  One index belongs to one server; a second server is refused the same directory.
+
 ## Regression checks
 
 `second_brain_core.testing` holds checks each server runs on itself in its own CI:

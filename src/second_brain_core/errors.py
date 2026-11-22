@@ -22,3 +22,12 @@ class FilterError(Exception):
     def __init__(self, detail: str) -> None:
         super().__init__(self.MESSAGE)
         self.detail = detail
+
+
+class SemanticUnavailableError(Exception):
+    """Search by meaning can't run: an optional dependency is missing, or the index
+    can't be used (it belongs to another server, say). The message says what to do."""
+
+
+class WordSearchUnavailableError(SemanticUnavailableError):
+    """The index has no word search: the Chroma store, or a SQLite without FTS5."""
