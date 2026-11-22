@@ -11,7 +11,9 @@ It is taken from the first of: the name the client registered under at sign-in, 
 name it gives in the MCP handshake (or in each request, on protocols without one),
 the first word of its ``User-Agent``. It keeps letters, digits and ``._/-`` only
 (anything else becomes ``_``), at most 40 characters, so it can't break or forge a
-line; with none of these it is ``unknown``.
+line; with none of these it is ``unknown``. It names a sign-in, not an app: every
+app that reaches the server through one connector shares its registration, and so
+its name.
 
 Four leaks are closed by configuration rather than code:
 

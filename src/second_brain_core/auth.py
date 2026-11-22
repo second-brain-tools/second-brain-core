@@ -10,9 +10,10 @@ is checked against ``<prefix>ALLOWED_GITHUB_IDS``, a list of numeric GitHub user
 Ids, not logins: a login can be renamed and then registered by somebody else, an
 id never changes. Anyone else gets 401 before any MCP message is read.
 
-This builds the proxy the way FastMCP's ``GitHubProvider`` does, with one change:
+This builds the proxy the way FastMCP's ``GitHubProvider`` does, with two changes:
 the token verifier is our allowlisting subclass, which ``GitHubProvider`` gives no
-way to pass in.
+way to pass in, and each request's token names the client it was issued to (see
+:class:`GitHubSignIn`).
 """
 
 import os
@@ -26,6 +27,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.github import GitHubTokenVerifier
 from fastmcp.utilities.authorization import AuthContext
 from key_value.aio.protocols import AsyncKeyValue
+from mcp.server.auth.provider import AccessToken as SdkAccessToken
 
 from .errors import ServeConfigError
 from .server import Server
@@ -195,6 +197,31 @@ class AllowlistCheck:
         return is_allowed(ctx.token, self.allowed_ids)
 
 
+class GitHubSignIn(OAuthProxy):
+    """FastMCP's OAuth proxy, with each request's token naming its client.
+
+    The proxy hands Claude a token of its own, issued to the client that signed in,
+    but for each request it returns the token its upstream verifier built, whose
+    ``client_id`` is the GitHub user's id. The caller (``sub``) and the allow-list
+    are right either way; the client's registered name, looked up by ``client_id``
+    for the audit line, was never found. Here ``client_id`` is set back to the
+    client the proxy's own token was issued to.
+    """
+
+    # The parent narrows the SDK's signature the same way, and silences it the same way.
+    async def load_access_token(self, token: str) -> SdkAccessToken | None:  # type: ignore[override]
+        loaded = await super().load_access_token(token)
+        if loaded is None:
+            return None
+        try:
+            issued_to = self.jwt_issuer.verify_token(token).get("client_id")
+        except Exception:  # verified a moment ago; never fail a request over a name
+            return loaded
+        if not isinstance(issued_to, str) or not issued_to or issued_to == loaded.client_id:
+            return loaded
+        return loaded.model_copy(update={"client_id": issued_to})
+
+
 def build_auth(
     server: Server,
     settings: AuthSettings,
@@ -202,7 +229,7 @@ def build_auth(
     *,
     client_storage: AsyncKeyValue | None = None,
     github_http_client: httpx2.AsyncClient | None = None,
-) -> OAuthProxy:
+) -> GitHubSignIn:
     """The OAuth proxy for HTTP mode: GitHub upstream, allowlisted verifier.
 
     ``client_storage`` and ``github_http_client`` exist for tests; in production
@@ -216,7 +243,7 @@ def build_auth(
         http_client=github_http_client,
     )
     base_url = public_url.rstrip("/")
-    return OAuthProxy(
+    return GitHubSignIn(
         upstream_authorization_endpoint=GITHUB_AUTHORIZE_URL,
         upstream_token_endpoint=GITHUB_TOKEN_URL,
         upstream_client_id=settings.client_id,
