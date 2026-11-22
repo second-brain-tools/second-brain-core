@@ -24,7 +24,9 @@ def test_no_source_file_here_holds_an_invisible_character() -> None:
         ("\ue000", "U+E000"),  # private use
     ],
 )
-def test_a_planted_character_is_found_by_file_and_line(tmp_path: Path, char: str, code: str) -> None:
+def test_a_planted_character_is_found_by_file_and_line(
+    tmp_path: Path, char: str, code: str
+) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "mod.py").write_text(f"x = 1\ny = 'a{char}b'\n", encoding="utf-8")
     assert invisible_characters(tmp_path) == [f"src/mod.py:2 {code}"]
