@@ -17,8 +17,8 @@ may change the interfaces.
   back to the name in the MCP handshake. A token the proxy issued now carries the id of the
   client it was issued to (`GitHubSignIn`, which `build_auth` returns). The caller (`caller=`)
   and the allow-list read the GitHub id, as before.
-  - The MCP library binds each HTTP session to the token's client id, so a session now
-    belongs to the client that signed in, not to every client of the same GitHub account.
+  - A token that expires between the proxy's check and this one is refused, as an
+    expired token is, so the client refreshes it.
   - `client=` names a sign-in, not an app: every app that reaches a server through one
     connector shares its registration, and so its name.
 

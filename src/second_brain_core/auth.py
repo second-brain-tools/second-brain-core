@@ -215,8 +215,10 @@ class GitHubSignIn(OAuthProxy):
             return None
         try:
             issued_to = self.jwt_issuer.verify_token(token).get("client_id")
-        except Exception:  # verified a moment ago; never fail a request over a name
-            return loaded
+        except Exception:
+            # It passed a moment ago, so it has expired since (the GitHub check can
+            # take seconds). Refused like any expired token: the client refreshes it.
+            return None
         if not isinstance(issued_to, str) or not issued_to or issued_to == loaded.client_id:
             return loaded
         return loaded.model_copy(update={"client_id": issued_to})
