@@ -1,0 +1,41 @@
+# Declarative PM spec for second-brain-core.
+# Applied manually via `gh` CLI or GitHub UI; no automated sync script at this stage.
+
+labels:
+  # component labels
+  - name: "component:mcp"
+    color: "0075ca"
+    description: "Sign-in, audit log, HTTP serving and the other serving pieces"
+  - name: "component:search"
+    color: "0075ca"
+    description: "The search engine: embeddings, vector and word index"
+  - name: "component:docs"
+    color: "0075ca"
+    description: "Documentation"
+  - name: "component:ci"
+    color: "0075ca"
+    description: "CI/CD and build"
+
+  # meta labels
+  - name: "epic"
+    color: "6f42c1"
+    description: "Multi-issue initiative"
+  - name: "backlog"
+    color: "d4c5f9"
+    description: "Unscheduled work"
+  - name: "needs-triage"
+    color: "e11d48"
+    description: "Not yet triaged"
+  - name: "blocked"
+    color: "b60205"
+    description: "Blocked by another issue or external dependency"
+  - name: "good first issue"
+    color: "7057ff"
+    description: "Good for newcomers"
+  - name: "help wanted"
+    color: "008672"
+    description: "Extra attention is needed"
+
+milestones:
+  - title: "v0.1 — First cut"
+    description: "The serving pieces both servers share, the client name in the audit line, and the search engine"
