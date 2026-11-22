@@ -81,6 +81,7 @@ def test_each_module_imports_alone() -> None:
             "remote",
             "server",
             "testing",
+            "textclean",
             "semantic.chunking",
             "semantic.embedders",
             "semantic.engine",

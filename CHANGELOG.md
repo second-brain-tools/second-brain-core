@@ -7,6 +7,26 @@ may change the interfaces.
 
 ## [Unreleased]
 
+## [0.2.0] — Outside text
+
+The text cleaner the mail server kept to itself, shared, so that a calendar server can
+clean invitations the same way without a second copy.
+
+### Added
+
+- **`textclean`: text other people wrote, made safe to hand to a model**, moved here from
+  second-brain-imap with its tests (second-brain-joplin #107): `clean`, `clean_line`,
+  `tidy` and `html_to_text`, unchanged in behaviour.
+  - `outside_text_notice(fields, source)`: the sentence an answer that carries such text
+    puts first. Each server names its own fields, so the model reads exactly which to
+    distrust.
+  - `UNREADABLE_HTML` now reads "[This HTML could not be turned into text.]", not
+    "This message's HTML", since the HTML may not be a message.
+- **`testing.check_no_invisible_characters`**, the check that no source or test file holds
+  an invisible or bidirectional character, which each server ran as its own copy. It
+  splits on newlines only, so a line or paragraph separator is caught too; the copy it
+  replaces split on them and missed them.
+
 ## [0.1.1] — The client's registered name
 
 ### Fixed
@@ -82,6 +102,7 @@ With the `semantic` extra, the search engine, by meaning and by words.
   traceback and keeps the line; on stdio, `guarded` keeps such an exception from
   escaping in the first place.
 
-[Unreleased]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/second-brain-tools/second-brain-core/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/second-brain-tools/second-brain-core/releases/tag/v0.1.0

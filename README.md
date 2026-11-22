@@ -6,7 +6,7 @@ and its sibling for mail. Each server talks to one store; everything they do the
 way lives here, written and tested once.
 
 > **0.x: the interfaces may still change.** Each server pins a compatible range
-> (`second-brain-core>=0.1,<0.2`), and a change that breaks one is a new minor version.
+> (`second-brain-core>=0.2,<0.3`), and a change that breaks one is a new minor version.
 
 ## What it holds
 
@@ -21,7 +21,8 @@ way lives here, written and tested once.
 | `failure` | The error a client sees: a planned failure's own sentence, or a fixed one for anything unplanned. |
 | `recent` | A short memory of what a write answered, so a repeated request writes nothing new. |
 | `annotations` | The tool annotations every server uses the same way. |
-| `testing` | Security regression checks each server runs against itself in its own CI. |
+| `textclean` | Outside text made safe to hand to a model: invisible and bidirectional characters removed, HTML reduced to the text a reader sees (hidden text dropped), and `outside_text_notice`, the sentence an answer carrying such text puts first. |
+| `testing` | Security regression checks each server runs against itself in its own CI, including `check_no_invisible_characters` over its own source. |
 | `semantic` | **The `semantic` extra:** search by meaning, and by words, over a server's items. The server supplies a `Source`; the `Engine` keeps the index in step and searches it, returning only what the source says is visible now. Stores: sqlite-vec (the default, with an FTS5 word index) and Chroma. `semantic.testing` has in-memory stand-ins for tests. |
 
 ## Using it in a server
