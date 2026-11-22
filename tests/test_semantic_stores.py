@@ -6,13 +6,13 @@ a dev dependency, so CI runs it) and on the Chroma store (skipped unless
 downloaded.
 """
 
-import gc
 import os
 import sqlite3
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fakeserver import OTHER, SERVER
@@ -422,14 +422,23 @@ def test_an_index_made_before_the_rule_is_made_private(tmp_path: Path) -> None:
     assert (directory / "index.db").stat().st_mode & 0o777 == 0o600
 
 
-def test_a_refused_open_closes_its_connection(tmp_path: Path) -> None:
-    owner = _sqlite(tmp_path)
-    owner.reset(MODEL)
-    del owner  # the owner's own connection closes with it
-    gc.collect()
+def test_a_refused_open_closes_its_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _sqlite(tmp_path).reset(MODEL)
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def recording(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(stores.sqlite3, "connect", recording)
     for _ in range(3):
         with pytest.raises(IndexOwnedElsewhereError):
             stores.build_vector_index(OTHER, "sqlite-vec", tmp_path)
-    # The file is not held open: it can be removed and made again.
-    (tmp_path / "index.db").unlink()
-    assert _sqlite(tmp_path).item_versions() == {}
+    assert len(opened) == 3
+    for conn in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            conn.execute("SELECT 1")
