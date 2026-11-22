@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "second-brain-core"
+dynamic = ["version"]
+description = "Shared library for the Second Brain MCP servers: sign-in, audit log, HTTP serving and search by meaning"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+keywords = ["mcp", "second-brain", "claude", "oauth", "semantic-search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "fastmcp>=4.1,<5",
+    # auth.py imports these itself; they come with fastmcp, but a library names
+    # what it imports.
+    "httpx2>=2.5",
+    "py-key-value-aio>=0.4.6",
+    "pydantic>=2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Search by meaning. `semantic` is the light default stack (sqlite-vec + FastEmbed);
+# compose with the others to swap backends. Each server re-exports these as its own
+# extras, and chooses the backend at runtime from its own settings.
+semantic = ["sqlite-vec>=0.1", "fastembed>=0.4"]
+semantic-chroma = ["chromadb>=0.5"]
+semantic-st = ["sentence-transformers>=3"]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pre-commit",
+    "mypy>=1.11",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "pytest-cov>=5.0",
+    # The default vector store, so the store tests run in CI. It ships wheels for
+    # Linux, macOS and Windows that work on every Python.
+    "sqlite-vec>=0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/second-brain-tools/second-brain-core"
+Repository = "https://github.com/second-brain-tools/second-brain-core"
+Changelog = "https://github.com/second-brain-tools/second-brain-core/blob/main/CHANGELOG.md"
+Issues = "https://github.com/second-brain-tools/second-brain-core/issues"
+
+[tool.hatch.version]
+path = "src/second_brain_core/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/second_brain_core"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# The 90% coverage gate is enforced in CI via `--cov-fail-under=90` (see
+# .github/workflows/checks.yml), not in addopts, so running a subset of tests
+# locally does not spuriously fail it.
+addopts = "--cov=second_brain_core --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["second_brain_core"]
+# The embedders need a model download and are only type-checked by mypy. The stores
+# need the optional extras and, for sqlite-vec, a Python that loads SQLite
+# extensions (GitHub's macOS Python doesn't), so the figure would change from one
+# runner to the next: tests/test_semantic_stores.py runs them instead, sqlite-vec in
+# every test job and Chroma in its own (see checks.yml).
+omit = ["*/semantic/embedders.py", "*/semantic/stores.py"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests", "scripts"]
+strict = true
+ignore_missing_imports = true
