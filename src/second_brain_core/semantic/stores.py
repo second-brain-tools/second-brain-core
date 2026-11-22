@@ -23,12 +23,17 @@ A SQLite built without FTS5 has no word index; search by meaning still works.
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
-from ..errors import SemanticUnavailableError, WordSearchUnavailableError
+from ..errors import (
+    IndexOwnedElsewhereError,
+    SemanticUnavailableError,
+    WordSearchUnavailableError,
+)
 from ..server import Server
 from .types import ChunkRecord, QueryHit, VectorIndex
 
@@ -36,6 +41,7 @@ SCHEMA = 2
 STORES = ("sqlite-vec", "chroma")
 _HYPHEN_BREAK = re.compile(r"(\w+)-[ \t]*\r?\n[ \t]*(\w+)")
 _WORD = re.compile(r"\w+")
+_VEC_WIDTH = re.compile(r"float\[(\d+)\]")
 
 
 def install_hint(server: Server, package: str, extra: str = "semantic") -> str:
@@ -54,11 +60,22 @@ def no_extensions_hint(server: Server) -> str:
     )
 
 
-def owned_elsewhere(server: Server, index_dir: Path, owner: str) -> SemanticUnavailableError:
-    return SemanticUnavailableError(
-        f"The search index in {index_dir} belongs to {owner}. Give each server an index "
-        f"directory of its own ({server.var('INDEX_DIR')})."
+def owned_elsewhere(server: Server, owner: str) -> IndexOwnedElsewhereError:
+    """The refusal for a directory another server owns. It names the variable, not the
+    path: the message can reach a remote client, and a path names the operator's home."""
+    return IndexOwnedElsewhereError(
+        f"The search index in {server.var('INDEX_DIR')} belongs to {owner}. Give each "
+        "server an index directory of its own."
     )
+
+
+def _private(path: Path, mode: int) -> None:
+    """Make ``path`` readable by its owner only, where the system has modes."""
+    if os.name == "posix" and path.exists():
+        try:
+            path.chmod(mode)
+        except OSError:  # not ours to change: leave it as it was
+            pass
 
 
 def joined_words(text: str) -> str:
@@ -80,6 +97,9 @@ def build_vector_index(server: Server, store: str, index_dir: str | Path) -> Vec
     """Open (or create) the configured store in ``index_dir``, for ``server``."""
     directory = Path(index_dir)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # An index holds the indexed text: a directory made before this rule (0755) is
+    # made private too.
+    _private(directory, 0o700)
     if store == "sqlite-vec":
         return SqliteVecIndex(directory, server)
     if store == "chroma":
@@ -101,24 +121,29 @@ class SqliteVecIndex:
             # Some Python builds (macOS's framework Python, some pyenv builds) leave
             # out SQLite's extension loading, which sqlite-vec needs.
             raise SemanticUnavailableError(no_extensions_hint(server))
-        self._conn = sqlite3.connect(str(index_dir / "index.db"), check_same_thread=False)
-        self._conn.enable_load_extension(True)
-        sqlite_vec.load(self._conn)
-        self._conn.enable_load_extension(False)
-        self._serialize = sqlite_vec.serialize_float32
-        self._conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
-        owner = self._meta("source")
-        if owner and owner != server.name:
+        path = index_dir / "index.db"
+        self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        try:
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+            self._serialize = sqlite_vec.serialize_float32
+            self._conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
+            owner = self._meta("source")
+            if owner and owner != server.name:
+                raise owned_elsewhere(server, owner)
+            self._words = _has_fts5(self._conn)
+            if "note_id" in self._columns("chunks"):
+                self._migrate_from_1()
+            self._create_tables()
+            if not owner:
+                self._set_meta("source", server.name)
+            self._set_meta("schema", str(SCHEMA))
+            self._conn.commit()
+        except BaseException:
             self._conn.close()
-            raise owned_elsewhere(server, index_dir, owner)
-        self._words = _has_fts5(self._conn)
-        if self._columns("chunks") and "note_id" in self._columns("chunks"):
-            self._migrate_from_1()
-        self._create_tables()
-        if not owner:
-            self._set_meta("source", server.name)
-        self._set_meta("schema", str(SCHEMA))
-        self._conn.commit()
+            raise
+        _private(path, 0o600)
 
     # -- the file's layout -------------------------------------------------------
 
@@ -160,18 +185,19 @@ class SqliteVecIndex:
         conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         try:
+            # Another process may have migrated it while this one waited for the lock.
+            if "note_id" not in self._columns("chunks"):
+                conn.commit()
+                return
             conn.execute("ALTER TABLE chunks RENAME COLUMN note_id TO item_id")
             conn.execute("ALTER TABLE chunks RENAME COLUMN updated_time TO version")
             if self._columns("empty_notes"):
                 conn.execute("ALTER TABLE empty_notes RENAME TO empty_items")
                 conn.execute("ALTER TABLE empty_items RENAME COLUMN note_id TO item_id")
                 conn.execute("ALTER TABLE empty_items RENAME COLUMN updated_time TO version")
-            if self._vec_table_ready():
-                row = conn.execute(
-                    "SELECT vec_length(embedding) FROM vec_chunks LIMIT 1"
-                ).fetchone()
-                if row:
-                    self._set_meta("dim", str(int(row[0])))
+            width = self._declared_width()
+            if width:
+                self._set_meta("dim", str(width))
             self._create_tables()
             if self._words:
                 rows = conn.execute("SELECT rowid, text FROM chunks").fetchall()
@@ -193,6 +219,14 @@ class SqliteVecIndex:
     def dim(self) -> int:
         raw = self._meta("dim")
         return int(raw) if raw.isdigit() else 0
+
+    def _declared_width(self) -> int:
+        """The vectors' width as the vec0 table was declared (0 when there is none)."""
+        row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'vec_chunks'"
+        ).fetchone()
+        found = _VEC_WIDTH.search(row[0]) if row and row[0] else None
+        return int(found.group(1)) if found else 0
 
     def _vec_table_ready(self) -> bool:
         row = self._conn.execute(
@@ -329,14 +363,23 @@ class SqliteVecIndex:
         ]
 
     def reset(self, model_name: str) -> None:
-        self._conn.execute("DROP TABLE IF EXISTS vec_chunks")
-        self._conn.execute("DELETE FROM chunks")
-        self._conn.execute("DELETE FROM empty_items")
-        if self._words:
-            self._conn.execute("DELETE FROM chunks_fts")
-        self._conn.execute("DELETE FROM meta WHERE key = 'dim'")
-        self._set_meta("model", model_name)
-        self._conn.commit()
+        # One transaction: an interrupted rebuild must not leave chunks without vectors
+        # (their versions would say there is nothing to embed).
+        conn = self._conn
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("DROP TABLE IF EXISTS vec_chunks")
+            conn.execute("DELETE FROM chunks")
+            conn.execute("DELETE FROM empty_items")
+            if self._words:
+                conn.execute("DELETE FROM chunks_fts")
+            conn.execute("DELETE FROM meta WHERE key = 'dim'")
+            self._set_meta("model", model_name)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
 
 def _has_fts5(conn: sqlite3.Connection) -> bool:
@@ -373,14 +416,27 @@ class ChromaVectorIndex:
         if self._COLLECTION in existing:
             owner = (self._client.get_collection(self._COLLECTION).metadata or {}).get("source")
             if owner and owner != server.name:
-                raise owned_elsewhere(server, index_dir, str(owner))
+                raise owned_elsewhere(server, str(owner))
         for name in self._OLD_COLLECTIONS:
             if name in existing:
                 self._client.delete_collection(name)
-        self._open("")
+        if self._COLLECTION in existing:
+            # Opened without metadata, then only missing keys added: some chromadb
+            # versions overwrite an existing collection's metadata with what a
+            # get-or-create passes, which would drop the model and width (a rebuild
+            # at every start).
+            self._collection = self._client.get_collection(self._COLLECTION)
+            current = dict(self._collection.metadata or {})
+            missing = {k: v for k, v in self._new_metadata("").items() if k not in current}
+            if missing:
+                self._collection.modify(metadata={**current, **missing})
+            self._empty = self._client.get_or_create_collection(self._EMPTY_COLLECTION)
+        else:
+            self._create("")
 
-    def _open(self, model_name: str) -> None:
-        self._collection = self._client.get_or_create_collection(
+    def _create(self, model_name: str) -> None:
+        """Make the collections afresh (after deleting them, or for a new index)."""
+        self._collection = self._client.create_collection(
             self._COLLECTION, metadata=self._new_metadata(model_name)
         )
         self._empty = self._client.get_or_create_collection(self._EMPTY_COLLECTION)
@@ -480,4 +536,4 @@ class ChromaVectorIndex:
                 self._client.delete_collection(name)
             except Exception:  # noqa: BLE001 - the collection may not exist yet
                 pass
-        self._open(model_name)
+        self._create(model_name)

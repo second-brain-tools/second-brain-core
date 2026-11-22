@@ -182,7 +182,9 @@ class AuditMiddleware(Middleware):
     async def on_call_tool(
         self, context: MiddlewareContext[Any], call_next: CallNext[Any, Any]
     ) -> Any:
-        tool = getattr(context.message, "name", "?")
+        # The tool's name is what the client asked for, so it is cleaned like the
+        # client's: an unknown name with a line break must not forge a line.
+        tool = clean_client_name(getattr(context.message, "name", None)) or "?"
         who = caller_id(context)
         client = await client_name(context, self._names)
         token = _THIS_CALLS_CLIENT.set(client)

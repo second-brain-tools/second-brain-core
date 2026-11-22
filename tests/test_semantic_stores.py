@@ -16,7 +16,11 @@ from types import SimpleNamespace
 import pytest
 from fakeserver import OTHER, SERVER
 
-from second_brain_core.errors import SemanticUnavailableError, WordSearchUnavailableError
+from second_brain_core.errors import (
+    IndexOwnedElsewhereError,
+    SemanticUnavailableError,
+    WordSearchUnavailableError,
+)
 from second_brain_core.semantic import stores
 from second_brain_core.semantic.testing import FakeVectorIndex
 from second_brain_core.semantic.types import ChunkRecord, VectorIndex
@@ -165,9 +169,10 @@ def test_chunks_marks_and_width_survive_reopening_the_index(opener: Opener, tmp_
 def test_another_server_is_refused_the_same_directory(store_name: str, tmp_path: Path) -> None:
     opener = _sqlite if store_name == "sqlite-vec" else _chroma
     opener(tmp_path).reset(MODEL)
-    with pytest.raises(SemanticUnavailableError, match="belongs to fake-server") as refused:
+    with pytest.raises(IndexOwnedElsewhereError, match="belongs to fake-server") as refused:
         stores.build_vector_index(OTHER, store_name, tmp_path)
     assert "SBO_INDEX_DIR" in str(refused.value)
+    assert str(tmp_path) not in str(refused.value)  # a path can name the operator's home
 
 
 def test_an_unknown_store_is_refused(tmp_path: Path) -> None:
@@ -354,3 +359,73 @@ def test_the_no_extensions_refusal_names_the_ways_out(
     with pytest.raises(SemanticUnavailableError, match="can load SQLite extensions") as refused:
         stores.SqliteVecIndex(tmp_path, SERVER)
     assert "SBF_VECTOR_STORE=chroma" in str(refused.value)
+
+
+def test_a_migration_another_process_finished_is_left_alone(tmp_path: Path) -> None:
+    """Two processes open a 1.2 file at once: the second finds it migrated, and stops."""
+    _old_index(tmp_path)
+    index = _sqlite(tmp_path)
+    assert isinstance(index, stores.SqliteVecIndex)
+    index._migrate_from_1()  # as the second process would, after waiting for the lock
+    assert index.item_versions() == {"a": "100", "b": "100"}
+    assert len(index.word_search("garden", 5)) == 1  # the word index wasn't filled twice
+
+
+def test_an_empty_1_2_index_still_records_its_width(tmp_path: Path) -> None:
+    _old_index(tmp_path)
+    conn = sqlite3.connect(str(tmp_path / "index.db"))
+    conn.execute("DELETE FROM chunks")
+    conn.commit()
+    conn.close()
+    conn = sqlite3.connect(str(tmp_path / "index.db"))
+    conn.enable_load_extension(True)
+    import sqlite_vec
+
+    sqlite_vec.load(conn)
+    conn.execute("DELETE FROM vec_chunks")
+    conn.commit()
+    conn.close()
+    assert _sqlite(tmp_path).dim == 4
+
+
+def test_an_interrupted_reset_leaves_the_index_as_it_was(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _sqlite(tmp_path)
+    index.reset(MODEL)
+    _with_text(index, "a", "kept")
+    assert isinstance(index, stores.SqliteVecIndex)
+
+    def broken(key: str, value: str) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(index, "_set_meta", broken)
+    with pytest.raises(sqlite3.OperationalError):
+        index.reset("another-model")
+    monkeypatch.undo()
+    assert index.model_name == MODEL and index.dim == 4
+    assert index.item_versions() == {"a": "1"}
+    assert [hit.item_id for hit in index.query([1.0, 0.0, 0.0, 0.0], 1)] == ["a"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no POSIX modes")
+def test_an_index_made_before_the_rule_is_made_private(tmp_path: Path) -> None:
+    directory = tmp_path / "idx"
+    directory.mkdir(mode=0o755)
+    directory.chmod(0o755)
+    _sqlite(directory).reset(MODEL)
+    (directory / "index.db").chmod(0o644)
+    directory.chmod(0o755)
+    stores.build_vector_index(SERVER, "sqlite-vec", directory)
+    assert directory.stat().st_mode & 0o777 == 0o700
+    assert (directory / "index.db").stat().st_mode & 0o777 == 0o600
+
+
+def test_a_refused_open_closes_its_connection(tmp_path: Path) -> None:
+    _sqlite(tmp_path).reset(MODEL)
+    for _ in range(3):
+        with pytest.raises(IndexOwnedElsewhereError):
+            stores.build_vector_index(OTHER, "sqlite-vec", tmp_path)
+    # The file is not held open: it can be removed and made again.
+    (tmp_path / "index.db").unlink()
+    assert _sqlite(tmp_path).item_versions() == {}

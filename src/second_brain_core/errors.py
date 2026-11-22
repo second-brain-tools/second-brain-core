@@ -29,5 +29,9 @@ class SemanticUnavailableError(Exception):
     can't be used (it belongs to another server, say). The message says what to do."""
 
 
+class IndexOwnedElsewhereError(SemanticUnavailableError):
+    """The index directory holds another server's index: each server needs its own."""
+
+
 class WordSearchUnavailableError(SemanticUnavailableError):
     """The index has no word search: the Chroma store, or a SQLite without FTS5."""

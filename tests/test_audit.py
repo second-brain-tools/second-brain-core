@@ -414,3 +414,14 @@ async def test_a_guarded_tool_keeps_its_signature_and_its_planned_failures(
     )
     assert "SECRET" not in caplog.text
     assert outcomes(caplog) == ["ok", "error:ToolError", "error:StoreDownError"]
+
+
+async def test_a_hostile_tool_name_cannot_forge_a_line(caplog: pytest.LogCaptureFixture) -> None:
+    """Without sign-in nothing refuses an unknown tool before the audit line is written."""
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    forged = "nope\n2026 INFO fakeserver.audit: tool=fake_echo caller=1 client=x outcome=ok ms=1"
+    async with Client(create()) as client:
+        await client.call_tool(forged, {}, raise_on_error=False)
+    (line,) = audit_lines(caplog)
+    assert "\n" not in line and line.count("tool=") == 1
+    assert line.startswith("tool=nope_2026_INFO_fakeserver.audit_tool_fak caller=")
