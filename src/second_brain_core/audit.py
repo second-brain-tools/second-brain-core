@@ -35,7 +35,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Sequence
 from contextvars import ContextVar
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token, get_http_headers
@@ -102,6 +102,7 @@ def clean_client_name(raw: object) -> str | None:
     return cleaned.strip("_") or None
 
 
+@runtime_checkable
 class RegisteredClients(Protocol):
     """What knows the clients registered at sign-in (FastMCP's OAuth proxy does)."""
 
