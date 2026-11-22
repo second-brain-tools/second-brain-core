@@ -15,8 +15,8 @@ This library is released **before** the servers that need the change:
 
 1. Merge the change here, cut the release, and check it installs from PyPI
    (`uv run scripts/smoke.py --refresh --from "second-brain-core==X.Y.Z"`).
-2. In each server, move the pin (`second-brain-core>=X.Y,<X.(Y+1)` in 0.x), lock, and
-   release the server as usual.
+2. In each server, move the pin (`second-brain-core>=X.Y,<X.(Y+1)` in 0.x), and any
+   extras that pin it too, lock, and release the server as usual.
 
 A server never depends on an unreleased library: a path source for local work stays out
 of its commits.

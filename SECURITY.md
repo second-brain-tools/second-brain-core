@@ -26,7 +26,7 @@ has them:
 - **A strict Host check** (421 for unknown hosts), stateless HTTP with JSON responses,
   and a per-caller rate limit of tool calls.
 - **Logs hold the call, never the content.** One line per tool call (tool, caller,
-  outcome by class name, duration). HTTP client loggers that would print a token in a
+  client, outcome by class name, duration). HTTP client loggers that would print a token in a
   URL are held at WARNING, the access log that would print an OAuth code is off,
   FastMCP's loggers are held out of DEBUG (which prints arguments), and the traceback
   is dropped from FastMCP's "Error calling tool" line (it carries the exception's

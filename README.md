@@ -15,7 +15,7 @@ way lives here, written and tested once.
 | `server` | `Server`: how a server describes itself (its name, variable prefix, package, port). Every other piece takes it, so nothing here names a product. |
 | `env` | Where settings come from (the environment, then a named `--env-file` *or* a checkout's `.env`, never both), and readers that never raise. |
 | `auth` | GitHub sign-in for HTTP mode through FastMCP's OAuth proxy, limited to listed numeric GitHub ids. |
-| `audit` | One log line per tool call (tool, caller, outcome, duration; never arguments, results or tokens), the per-caller rate limit, and the logging set-up that keeps tokens and content out of the log. |
+| `audit` | One log line per tool call (tool, caller, client, outcome, duration; never arguments, results or tokens), the per-caller rate limit, and the logging set-up that keeps tokens and content out of the log. |
 | `remote` | HTTP mode's options, the start-up guardrails, the transport choice (stdio unless asked), the middleware stack, and the run calls. |
 | `health` | The `/healthz` route: two booleans, 503 when the store is down. |
 | `failure` | The error a client sees: a planned failure's own sentence, or a fixed one for anything unplanned. |

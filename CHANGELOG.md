@@ -14,7 +14,7 @@ may change the interfaces.
   (second-brain-joplin #91):
   - `Server`, the description every piece takes, so nothing here names a product;
   - `env`: a named env file *or* a checkout's `.env`, never both, and readers that
-    record a bad value instead of raising;
+    never raise: a bad value reads as `None`, for the server to record and refuse;
   - `auth`: GitHub sign-in with an allow-list of numeric ids;
   - `audit`: the audit line, naming a server's own failures by class; the per-caller
     rate limit; the logging set-up;
