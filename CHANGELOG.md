@@ -30,7 +30,8 @@ may change the interfaces.
   else `unknown`. Letters, digits and `._/-` only, at most 40 characters, so a hostile
   value can't break or forge a line. It is what the client says about itself: a hint
   for the operator, never proof, and nothing is decided by it. `this_calls_client()`
-  gives it to a line a tool logs itself.
+  gives it to a line a tool logs itself. The tool's name (`tool=`) is cleaned the same
+  way, since a client can ask for any name.
 - **The search engine, as the `semantic` extra** (second-brain-joplin #93), moved here
   from second-brain-joplin so the mail server can search by meaning too:
   - `Engine` keeps an index in step with a server's `Source` (its items, their versions,
@@ -41,17 +42,22 @@ may change the interfaces.
     migrated in place, in one transaction, keeping every vector (sqlite-vec); a Chroma
     index from then is rebuilt by itself.
   - The index file records its layout's version, the server that owns it (a second
-    server pointed at the same directory is refused: each sync would delete the
-    other's items), and the vectors' width (a new width under the same model name now
+    server pointed at the same directory is refused, naming the variable, not the path:
+    each sync would delete the other's items), and the vectors' width (a new width under the same model name now
     rebuilds the index).
   - **A word index beside the vectors** (sqlite-vec): SQLite FTS5, ignoring case and
     accents; a word hyphenated across a line break is found joined and as written.
     `Engine.word_search` applies the same visibility rule. The Chroma store says plainly
     that it has no word search, and so does a SQLite built without FTS5.
+  - An index directory is made private (0700) and the index file 0600, ones made
+    before included; a full rebuild's reset is one transaction, so an interrupted
+    rebuild leaves the index as it was.
   - `semantic.testing`: in-memory stand-ins (embedder, index, an index another process
     writes to, a source) for any server's tests.
-- **FastMCP's "Error calling tool" log line loses its traceback.** When an exception
-  escaped a tool, FastMCP logged it with the exception's text, which can quote what
-  was being processed. `configure_logging` now drops the traceback and keeps the line.
+- **FastMCP's "Error calling tool" log line loses its traceback** in HTTP mode. When an
+  exception escaped a tool, FastMCP logged it with the exception's text, which can quote
+  what was being processed. `configure_logging` (HTTP mode's log set-up) now drops the
+  traceback and keeps the line; on stdio, `guarded` keeps such an exception from
+  escaping in the first place.
 
 [Unreleased]: https://github.com/second-brain-tools/second-brain-core/commits/main
