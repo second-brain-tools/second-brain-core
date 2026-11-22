@@ -23,6 +23,13 @@ may change the interfaces.
   - `failure`: a planned failure's sentence, or a fixed one for anything else;
   - `recent` and `annotations`;
   - `testing`: the security regression checks each server runs on itself.
+- **The audit line names the client** (`client=`; second-brain-joplin #92): the name
+  it registered under at sign-in, else the name it gives in the MCP handshake (or in
+  each request, on protocols without one), else the first word of its `User-Agent`,
+  else `unknown`. Letters, digits and `._/-` only, at most 40 characters, so a hostile
+  value can't break or forge a line. It is what the client says about itself: a hint
+  for the operator, never proof, and nothing is decided by it. `this_calls_client()`
+  gives it to a line a tool logs itself.
 - **FastMCP's "Error calling tool" log line loses its traceback.** When an exception
   escaped a tool, FastMCP logged it with the exception's text, which can quote what
   was being processed. `configure_logging` now drops the traceback and keeps the line.

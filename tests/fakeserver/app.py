@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
 
 from second_brain_core.annotations import READ_ONLY
+from second_brain_core.audit import RegisteredClients, this_calls_client
 from second_brain_core.errors import FilterError
 from second_brain_core.failure import tool_error, unexpected
 from second_brain_core.remote import build_middleware
@@ -32,6 +33,7 @@ def create(
     allowed_ids: frozenset[str] | None = None,
     rate_limit_per_minute: int = 0,
     named_causes: tuple[type[BaseException], ...] = NAMED_CAUSES,
+    clients: RegisteredClients | None = None,
 ) -> FastMCP:
     middleware = build_middleware(
         SERVER,
@@ -39,6 +41,7 @@ def create(
         rate_limit_per_minute=rate_limit_per_minute,
         named_causes=named_causes,
         signed_in=auth is not None,
+        clients=clients,
     )
     server = FastMCP(SERVER.name, auth=auth, middleware=middleware, mask_error_details=True)
 
@@ -46,6 +49,11 @@ def create(
     async def fake_echo(text: str) -> str:
         """Say ``text`` back."""
         return text
+
+    @server.tool(annotations=READ_ONLY)
+    async def fake_whoami() -> str:
+        """The client name the audit line gives this call, as a tool sees it."""
+        return this_calls_client()
 
     @server.tool(annotations=READ_ONLY)
     async def fake_down() -> str:

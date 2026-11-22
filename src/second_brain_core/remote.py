@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 from fastmcp import FastMCP
 from fastmcp.server.middleware import AuthMiddleware, Middleware
 
-from .audit import AuditMiddleware, rate_limit
+from .audit import AuditMiddleware, ClientNames, RegisteredClients, rate_limit
 from .auth import allowlist_check
 from .errors import ServeConfigError
 from .server import Server
@@ -231,12 +231,14 @@ def build_middleware(
     rate_limit_per_minute: int,
     named_causes: Sequence[type[BaseException]] = (),
     signed_in: bool,
+    clients: RegisteredClients | None = None,
 ) -> list[Middleware]:
     """The middleware every server puts in front of its tools, in order.
 
     The per-caller rate limit (``rate_limit_per_minute``, 0 = off), the allow-list
     check as a second layer behind the token verifier, then the audit line. With
-    sign-in (``signed_in``), ``allowed_ids`` is required.
+    sign-in (``signed_in``), ``allowed_ids`` is required. ``clients`` is the sign-in
+    provider (``auth.build_auth``'s proxy), whose registrations name the clients.
     """
     if signed_in and not allowed_ids:
         raise ValueError("a server with sign-in needs its allowed GitHub ids")
@@ -245,5 +247,6 @@ def build_middleware(
         middleware.append(rate_limit(rate_limit_per_minute))
     if allowed_ids:
         middleware.append(AuthMiddleware(auth=allowlist_check(allowed_ids)))
-    middleware.append(AuditMiddleware(server, named_causes))
+    names = ClientNames(clients) if clients is not None else None
+    middleware.append(AuditMiddleware(server, named_causes, names))
     return middleware

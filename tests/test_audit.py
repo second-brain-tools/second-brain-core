@@ -12,15 +12,18 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.utilities.tests import ASGIServer, asgi_server
 from mcp.shared.exceptions import MCPError
+from mcp.types import Implementation
 
 from second_brain_core.audit import (
     FASTMCP_SERVER_LOGGER,
     NO_DEBUG_LOGGERS,
     QUIET_LOGGERS,
     NoTraceback,
+    clean_client_name,
     configure_logging,
     outcome_name,
     rate_limit,
+    this_calls_client,
 )
 from second_brain_core.failure import internal_message
 from second_brain_core.remote import HttpOptions, http_app_kwargs
@@ -135,7 +138,7 @@ async def test_logs_hold_the_call_but_no_content_or_credentials(
     async with serving() as running, running.client(auth="john") as client:
         await client.call_tool("fake_echo", {"text": SECRET_TEXT})
     (line,) = audit_lines(caplog)
-    assert line.startswith("tool=fake_echo caller=65598 outcome=ok ms=")
+    assert line.startswith("tool=fake_echo caller=65598 client=fastmcp outcome=ok ms=")
     for secret in (SECRET_TEXT, "Bearer john"):
         assert secret not in caplog.text, secret
 
@@ -264,3 +267,126 @@ async def test_an_escaped_exceptions_text_never_reaches_the_log() -> None:
     assert sum(isinstance(f, NoTraceback) for f in fastmcp_server.filters) == 1
     await errors_of("fake_escape")
     assert logged == ["Error calling tool 'fake_escape'"]
+
+
+# -- the client's name (#92) ----------------------------------------------------
+
+
+class Registry:
+    """A sign-in provider's client registrations, as FastMCP's proxy keeps them."""
+
+    def __init__(self, names: dict[str, Any]) -> None:
+        self.names = names
+        self.asked: list[str] = []
+
+    async def get_client(self, client_id: str) -> Any:
+        self.asked.append(client_id)
+        if client_id == "broken":
+            raise RuntimeError("the store is unreadable")
+        if client_id not in self.names:
+            return None
+        return type("Client", (), {"client_name": self.names[client_id]})()
+
+
+SIGNED_IN = {
+    "desktop": {"client_id": "reg-desktop", "scopes": [], "sub": "65598"},
+    "nameless": {"client_id": "reg-nameless", "scopes": [], "sub": "65598"},
+    "stranger": {"client_id": "not-registered", "scopes": [], "sub": "65598"},
+    "broken": {"client_id": "broken", "scopes": [], "sub": "65598"},
+}
+
+
+@asynccontextmanager
+async def serving_with(registry: Registry | None) -> AsyncIterator[ASGIServer]:
+    server = create(
+        auth=StaticTokenVerifier(tokens=SIGNED_IN),
+        allowed_ids=frozenset({"65598"}),
+        clients=registry,
+    )
+    options = HttpOptions(host="127.0.0.1", port=8799, public_url="https://notes.example.com")
+    kwargs = http_app_kwargs(options)
+    path = kwargs.pop("path")
+    async with asgi_server(server, path=path, **kwargs) as running:
+        yield running
+
+
+def clients_logged(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [line.split(" client=")[1].split(" ")[0] for line in audit_lines(caplog)]
+
+
+async def test_the_registered_name_comes_first(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    registry = Registry({"reg-desktop": "Claude Desktop", "reg-nameless": None})
+    async with serving_with(registry) as running:
+        for token in ("desktop", "desktop", "nameless", "stranger", "broken"):
+            async with running.client(auth=token) as client:
+                await client.call_tool("fake_echo", {"text": "x"})
+    # A registration without a name, an unknown id, or a registry that fails:
+    # the next source, the handshake's name.
+    assert clients_logged(caplog) == ["Claude_Desktop"] * 2 + ["fastmcp"] * 3
+    # Looked up once per id, and again only after a failure.
+    assert registry.asked == ["reg-desktop", "reg-nameless", "not-registered", "broken"]
+
+
+async def test_without_sign_in_the_handshake_names_the_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    async with Client(create(), client_info=Implementation(name="Claude Code", version="9")) as c:
+        assert (await c.call_tool("fake_whoami", {})).data == "Claude_Code"
+    assert clients_logged(caplog) == ["Claude_Code"]
+
+
+async def test_the_user_agent_when_nothing_else_says(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    monkeypatch.setattr(
+        "second_brain_core.audit.get_http_headers",
+        lambda: {"user-agent": "claude-ai/1.4 (+https://claude.ai)"},
+    )
+    async with Client(create(), client_info=Implementation(name="\n\t", version="1")) as c:
+        await c.call_tool("fake_echo", {"text": "x"})
+    monkeypatch.setattr("second_brain_core.audit.get_http_headers", lambda: {})
+    async with Client(create(), client_info=Implementation(name="", version="1")) as c:
+        assert (await c.call_tool("fake_whoami", {})).data == "unknown"
+    assert clients_logged(caplog) == ["claude-ai/1.4", "unknown"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Claude", "Claude"),
+        ("claude-ai/1.4.2", "claude-ai/1.4.2"),
+        ("a b\tc", "a_b_c"),
+        ("x\ny caller=0 outcome=ok", "x_y_caller_0_outcome_ok"),
+        ("\x1b[31mred\x07", "31mred"),
+        ("Clàude ☃ Dèsktop", "Cl_ude_D_sktop"),
+        ("A" * 10_000, "A" * 40),
+        ("_" * 50 + "z", "z"),
+        ("   ", None),
+        ("☃☃", None),
+        ("", None),
+        (None, None),
+        (42, None),
+    ],
+)
+def test_a_client_name_is_cleaned(raw: object, expected: str | None) -> None:
+    assert clean_client_name(raw) == expected
+
+
+async def test_a_hostile_name_cannot_forge_or_break_a_line(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    hostile = "evil\ntool=fake_down caller=1 client=x outcome=ok ms=1\r" + "x" * 10_000
+    async with Client(create(), client_info=Implementation(name=hostile, version="1")) as c:
+        await c.call_tool("fake_echo", {"text": "x"})
+    (line,) = audit_lines(caplog)
+    assert "\n" not in line and "\r" not in line
+    assert line.count("tool=") == 1 and line.count(" client=") == 1
+    assert len(line) < 200
+
+
+async def test_a_tool_outside_a_call_sees_unknown() -> None:
+    assert this_calls_client() == "unknown"
