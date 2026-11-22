@@ -430,11 +430,11 @@ def test_a_refused_open_closes_its_connection(
     real_connect = sqlite3.connect
 
     def recording(*args: Any, **kwargs: Any) -> sqlite3.Connection:
-        conn = real_connect(*args, **kwargs)
+        conn: sqlite3.Connection = real_connect(*args, **kwargs)
         opened.append(conn)
         return conn
 
-    monkeypatch.setattr(stores.sqlite3, "connect", recording)
+    monkeypatch.setattr(sqlite3, "connect", recording)  # the module the store uses
     for _ in range(3):
         with pytest.raises(IndexOwnedElsewhereError):
             stores.build_vector_index(OTHER, "sqlite-vec", tmp_path)
