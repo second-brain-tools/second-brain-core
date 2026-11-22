@@ -32,7 +32,7 @@ import second_brain_core
 assert os.environ["FASTMCP_ENV_FILE"] == os.devnull, "the package did not pin FASTMCP_ENV_FILE"
 print("ok    importing the package pins FastMCP's env file")
 names = ["annotations", "audit", "auth", "env", "errors", "failure", "health", "recent",
-         "remote", "server", "testing", "semantic.chunking", "semantic.engine",
+         "remote", "server", "testing", "textclean", "semantic.chunking", "semantic.engine",
          "semantic.embedders", "semantic.stores", "semantic.sync", "semantic.testing",
          "semantic.types"]
 for name in names:

@@ -9,6 +9,7 @@ package (see ``tests/test_core_checks.py`` in each server). Each raises
 import os
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -55,3 +56,46 @@ def check_each_imports_alone(modules: Iterable[str]) -> None:
             [sys.executable, "-c", f"import {module}"], capture_output=True, text=True
         )
         assert done.returncode == 0, f"import {module} failed on its own:\n{done.stderr}"
+
+
+def invisible_characters(
+    root: Path, patterns: Iterable[str] = ("src/**/*.py", "tests/**/*.py")
+) -> list[str]:
+    """Where ``root``'s files hold a character a reader can't see: ``path:line U+XXXX``.
+
+    Format, control, private-use, surrogate and unassigned characters (a tab
+    aside), line and paragraph separators, variation selectors, and every space
+    but the plain one. "Unassigned" follows the running Python's Unicode tables,
+    so a character a newer Unicode assigns stops counting on a newer Python.
+    """
+    offenders = []
+    paths = sorted({path for pattern in patterns for path in root.glob(pattern)})
+    for path in paths:
+        # Split on newlines only: splitlines() would also split on U+2028 and its kind,
+        # which are among the characters looked for. A Windows checkout's \r goes too.
+        lines = path.read_text(encoding="utf-8").split("\n")
+        for number, line in enumerate(lines, start=1):
+            for char in line.removesuffix("\r"):
+                category = unicodedata.category(char)
+                hidden = category in ("Cf", "Cc", "Co", "Cs", "Cn", "Zl", "Zp")
+                selector = 0x180B <= ord(char) <= 0x180F or 0xFE00 <= ord(char) <= 0xFE0F
+                odd_space = category == "Zs" and char != " "
+                if (hidden and char != "\t") or selector or odd_space:
+                    offenders.append(
+                        f"{path.relative_to(root).as_posix()}:{number} U+{ord(char):04X}"
+                    )
+    return offenders
+
+
+def check_no_invisible_characters(
+    root: Path, patterns: Iterable[str] = ("src/**/*.py", "tests/**/*.py")
+) -> None:
+    """No source or test file under ``root`` holds an invisible or bidirectional character.
+
+    A reviewer must be able to see every character of the code. An editor or a
+    tool that turns an escape into the character itself would otherwise leave a
+    zero-width space or a direction override sitting unseen in a source file, so
+    such characters are written as escapes. ``root`` is the project's checkout.
+    """
+    offenders = invisible_characters(root, patterns)
+    assert offenders == [], f"invisible characters in source files: {offenders}"

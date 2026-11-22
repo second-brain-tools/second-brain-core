@@ -8,7 +8,7 @@ issue. We aim to acknowledge reports within a few days.
 
 ## What this library is responsible for
 
-The servers built on it serve personal stores (notes, mail) to AI clients, some of
+The servers built on it serve a person's own data (notes, mail, calendars and the like) to AI clients, some of
 them over the internet. These protections are written here once, so every server
 has them:
 
@@ -34,6 +34,13 @@ has them:
 - **The client sees a planned failure's own sentence, or a fixed one.** An unplanned
   exception's text can quote what was being processed, so neither the client nor the
   log gets it.
+- **Text other people wrote is cleaned and marked** (`textclean`). Invisible and
+  bidirectional characters are removed, HTML is reduced to the text a reader would see
+  (hidden elements, comments, scripts and styles dropped), and nothing is fetched. A
+  server puts `outside_text_notice` first in each answer that carries such text, naming
+  the fields. This is best effort on the HTML side: it follows each element's own
+  `style` attribute, not style sheets and not colours against backgrounds, so a
+  model must still treat that text as information, never as instructions.
 
 - **Search by meaning shows only what the server shows.** An index is a file other
   processes can write, so with a filter active every search asks the server which items
@@ -46,6 +53,7 @@ has them:
 ## Regression checks
 
 `second_brain_core.testing` holds checks each server runs on itself in its own CI:
-that a working directory's `.env` can't set FastMCP's settings, and that each entry
-point imports on its own. Their own tests, here, include a control that shows each
+that a working directory's `.env` can't set FastMCP's settings, that each entry
+point imports on its own, and that no source or test file holds an invisible or
+bidirectional character (`check_no_invisible_characters`). Their own tests, here, include a control that shows each
 check catches the mistake it is for.

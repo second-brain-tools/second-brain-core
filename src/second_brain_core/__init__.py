@@ -1,14 +1,14 @@
 """second-brain-core: what the Second Brain MCP servers share.
 
-Sign-in, the audit log, HTTP serving, the start-up guardrails, and (with the
-``semantic`` extra) search by meaning. Each server describes itself once with a
-:class:`~second_brain_core.server.Server` and hands that to every shared piece,
-so nothing in here names a product.
+Sign-in, the audit log, HTTP serving, the start-up guardrails, the cleaner for
+text other people wrote, and (with the ``semantic`` extra) search by meaning.
+Each server describes itself once with a :class:`~second_brain_core.server.Server`
+and hands that to every shared piece, so nothing in here names a product.
 """
 
 import os
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 
 def pin_fastmcp_env() -> None:
