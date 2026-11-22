@@ -40,7 +40,7 @@ _WORD = re.compile(r"\w+")
 
 def install_hint(server: Server, package: str, extra: str = "semantic") -> str:
     return (
-        f"Search by meaning needs the optional '{package}' dependency. Install it with "
+        f"Semantic search needs the optional '{package}' dependency. Install it with "
         f'`pip install "{server.name}[{extra}]"` (or the matching uvx/uv extra).'
     )
 
