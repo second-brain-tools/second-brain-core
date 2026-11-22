@@ -7,6 +7,13 @@ may change the interfaces.
 
 ## [Unreleased]
 
+## [0.1.0] — First cut
+
+The serving pieces the Second Brain servers shared as copies, written once: sign-in,
+the audit log (now naming the client), HTTP serving and its guardrails, the settings
+files, the error a client sees, and the security checks each server runs on itself.
+With the `semantic` extra, the search engine, by meaning and by words.
+
 ### Added
 
 - **The shared serving pieces of the Second Brain servers**, moved here from
@@ -60,4 +67,5 @@ may change the interfaces.
   traceback and keeps the line; on stdio, `guarded` keeps such an exception from
   escaping in the first place.
 
-[Unreleased]: https://github.com/second-brain-tools/second-brain-core/commits/main
+[Unreleased]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/second-brain-tools/second-brain-core/releases/tag/v0.1.0
