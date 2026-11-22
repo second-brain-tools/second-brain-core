@@ -351,3 +351,132 @@ async def test_in_memory_client_of_a_signed_in_server_sees_nothing() -> None:
     """
     async with Client(oauth_server()) as client:
         assert await client.list_tools() == []
+
+
+# -- the token names its client (#92) -------------------------------------------
+
+
+async def signed_in_through_the_proxy(
+    provider: Any, client_name: str | None, client_id: str = "reg-desktop"
+) -> str:
+    """A FastMCP token from ``provider``, as Claude gets one at the end of sign-in.
+
+    The browser half (consent, GitHub's page, the callback) is skipped: the code the
+    callback would have stored is put in the proxy's code store directly, then
+    exchanged the way the token endpoint does.
+    """
+    import time
+
+    from fastmcp.server.auth.oauth_proxy.models import ClientCode
+    from mcp.server.auth.provider import AuthorizationCode
+    from mcp.shared.auth import OAuthClientInformationFull
+
+    client = OAuthClientInformationFull(
+        client_id=client_id,
+        client_name=client_name,
+        redirect_uris=[CLAUDE_CALLBACK],  # type: ignore[list-item]
+        grant_types=["authorization_code", "refresh_token"],
+        token_endpoint_auth_method="none",
+    )
+    await provider.register_client(client)
+    registered = await provider.get_client(client_id)
+    now = time.time()
+    await provider._code_store.put(
+        key="the-code",
+        value=ClientCode(
+            code="the-code",
+            client_id=client_id,
+            redirect_uri=CLAUDE_CALLBACK,
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read:user"],
+            idp_tokens={"access_token": "gho_upstream", "token_type": "bearer"},
+            expires_at=now + 60,
+            created_at=now,
+        ),
+    )
+    code = AuthorizationCode(
+        code="the-code",
+        scopes=["read:user"],
+        expires_at=now + 60,
+        client_id=client_id,
+        code_challenge="x",
+        redirect_uri=CLAUDE_CALLBACK,  # type: ignore[arg-type]
+        redirect_uri_provided_explicitly=True,
+    )
+    tokens = await provider.exchange_authorization_code(registered, code)
+    return str(tokens.access_token)
+
+
+async def test_a_proxy_token_names_the_client_it_was_issued_to(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The proxy's own token says which client it was issued to; the log uses it.
+
+    FastMCP's proxy returns the token its upstream verifier built, whose client id
+    is the GitHub user's, so the registered name was never found.
+    """
+    caplog.set_level("INFO", logger="fakeserver")
+    settings = AuthSettings.from_env(SERVER, FULL_ENV)
+    assert settings is not None
+    provider = build_auth(
+        SERVER,
+        settings,
+        PUBLIC_URL,
+        client_storage=MemoryStore(),
+        github_http_client=fake_github({"id": int(JOHN), "login": "jomkz"}),
+    )
+    server = create(auth=provider, allowed_ids=settings.allowed_ids, clients=provider)
+    async with serving(lambda: server) as running:
+        token = await signed_in_through_the_proxy(provider, "Claude Desktop")
+        loaded = await provider.load_access_token(token)
+        assert isinstance(loaded, AccessToken)
+        assert loaded.client_id == "reg-desktop"
+        assert loaded.claims["sub"] == JOHN  # the caller, and the allow-list, unchanged
+        async with running.client(auth=token) as client:
+            await client.call_tool("fake_echo", {"text": "x"})
+    (line,) = [r.getMessage() for r in caplog.records if r.getMessage().startswith("tool=")]
+    assert f" caller={JOHN} client=Claude_Desktop " in line
+
+
+@pytest.mark.parametrize("second_look", ["expired since", "no client id", "same id"])
+async def test_a_token_that_names_no_other_client_keeps_the_upstream_id(
+    second_look: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No client id, or the same one: the token as FastMCP gives it. Expired since: refused."""
+    settings = AuthSettings.from_env(SERVER, FULL_ENV)
+    assert settings is not None
+    provider = build_auth(
+        SERVER,
+        settings,
+        PUBLIC_URL,
+        client_storage=MemoryStore(),
+        github_http_client=fake_github({"id": int(JOHN), "login": "jomkz"}),
+    )
+    server = create(auth=provider, allowed_ids=settings.allowed_ids, clients=provider)
+    async with serving(lambda: server):
+        token = await signed_in_through_the_proxy(provider, None)
+        assert await provider.load_access_token("not-a-token") is None
+        issuer = provider.jwt_issuer
+        real = issuer.verify_token
+        looks: list[int] = []
+
+        def verify(raw: str) -> dict[str, Any]:
+            looks.append(1)
+            if len(looks) == 1:  # the proxy's own check, as it is
+                return real(raw)
+            if second_look == "expired since":
+                raise ValueError("expired a moment ago")
+            if second_look == "no client id":
+                return {}
+            return {"client_id": JOHN}
+
+        monkeypatch.setattr(issuer, "verify_token", verify)
+        loaded = await provider.load_access_token(token)
+    if second_look == "expired since":
+        # Refused (401), as an expired token is, so the client refreshes it.
+        assert loaded is None
+        return
+    assert isinstance(loaded, AccessToken)
+    assert loaded.client_id == JOHN  # the upstream verifier's, as FastMCP gives it
+    assert loaded.claims["sub"] == JOHN

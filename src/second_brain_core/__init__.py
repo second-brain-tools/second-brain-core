@@ -8,7 +8,7 @@ so nothing in here names a product.
 
 import os
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def pin_fastmcp_env() -> None:

@@ -7,6 +7,21 @@ may change the interfaces.
 
 ## [Unreleased]
 
+## [0.1.1] — The client's registered name
+
+### Fixed
+
+- **`client=` now gives the name the client registered under at sign-in** (second-brain-joplin
+  #92). FastMCP's OAuth proxy hands each request the token its upstream verifier built, whose
+  client id is the GitHub user's, so the registration was never found and every line fell
+  back to the name in the MCP handshake. A token the proxy issued now carries the id of the
+  client it was issued to (`GitHubSignIn`, which `build_auth` returns). The caller (`caller=`)
+  and the allow-list read the GitHub id, as before.
+  - A token that expires between the proxy's check and this one is refused, as an
+    expired token is, so the client refreshes it.
+  - `client=` names a sign-in, not an app: every app that reaches a server through one
+    connector shares its registration, and so its name.
+
 ## [0.1.0] — First cut
 
 The serving pieces the Second Brain servers shared as copies, written once: sign-in,
@@ -67,5 +82,6 @@ With the `semantic` extra, the search engine, by meaning and by words.
   traceback and keeps the line; on stdio, `guarded` keeps such an exception from
   escaping in the first place.
 
-[Unreleased]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/second-brain-tools/second-brain-core/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/second-brain-tools/second-brain-core/releases/tag/v0.1.0
