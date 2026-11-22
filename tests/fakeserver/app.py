@@ -6,7 +6,7 @@ from fastmcp.server.auth import AuthProvider
 from second_brain_core.annotations import READ_ONLY
 from second_brain_core.audit import RegisteredClients, this_calls_client
 from second_brain_core.errors import FilterError
-from second_brain_core.failure import tool_error, unexpected
+from second_brain_core.failure import guarded, tool_error, unexpected
 from second_brain_core.remote import build_middleware
 from second_brain_core.server import Server
 
@@ -78,6 +78,23 @@ def create(
             return {"a": "1"}["the text of a private note"]
         except Exception as exc:
             raise unexpected(SERVER, "fake_boom", exc) from None
+
+    @server.tool(annotations=READ_ONLY)
+    @guarded(SERVER)
+    async def fake_guarded(text: str, fail: bool = False) -> str:
+        """A guarded tool: says ``text`` back, or fails with ``text`` in the exception."""
+        if fail:
+            raise ValueError(f"the text of a private note: {text}")
+        return text
+
+    @server.tool(annotations=READ_ONLY)
+    @guarded(SERVER)
+    async def fake_guarded_planned() -> str:
+        """A guarded tool whose planned failure keeps its own sentence."""
+        try:
+            raise StoreDownError("the fake store is down")
+        except StoreDownError as exc:
+            raise tool_error(SERVER, exc) from exc
 
     @server.tool(annotations=READ_ONLY)
     async def fake_escape() -> str:

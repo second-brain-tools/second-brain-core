@@ -7,13 +7,19 @@ a ``ToolError`` with a fixed one (:func:`unexpected`). Build the server with
 reaches the client as FastMCP's generic sentence, never as its own text.
 """
 
+import functools
 import traceback
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 from fastmcp.exceptions import ToolError
 
 from .errors import FilterError
 from .server import Server
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def tool_error(server: Server, exc: Exception) -> ToolError:
@@ -51,3 +57,31 @@ def unexpected(server: Server, tool: str, exc: BaseException) -> ToolError:
                 break
     server.logger("tools").error("unexpected %s in %s at %s", type(exc).__name__, tool, where)
     return ToolError(internal_message(server))
+
+
+def guarded(
+    server: Server,
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+    """A tool decorator: a ``ToolError`` passes through; anything else is :func:`unexpected`.
+
+    Put it under ``@mcp.tool``, so the tool keeps its own handling of the failures
+    it plans for and nothing else escapes it::
+
+        @mcp.tool(annotations=READ_ONLY)
+        @guarded(SERVER)
+        async def my_tool(...) -> ...: ...
+    """
+
+    def decorate(tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+        @functools.wraps(tool)
+        async def run(*args: P.args, **kwargs: P.kwargs) -> R:
+            try:
+                return await tool(*args, **kwargs)
+            except ToolError:
+                raise
+            except Exception as exc:
+                raise unexpected(server, tool.__name__, exc) from None
+
+        return run
+
+    return decorate

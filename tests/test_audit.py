@@ -390,3 +390,27 @@ async def test_a_hostile_name_cannot_forge_or_break_a_line(
 
 async def test_a_tool_outside_a_call_sees_unknown() -> None:
     assert this_calls_client() == "unknown"
+
+
+async def test_a_guarded_tool_keeps_its_signature_and_its_planned_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="fakeserver")
+    async with Client(create()) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        schema = tools["fake_guarded"].input_schema
+        assert set(schema["properties"]) == {"text", "fail"} and schema["required"] == ["text"]
+        assert (await client.call_tool("fake_guarded", {"text": "hi"})).data == "hi"
+        failed = await client.call_tool(
+            "fake_guarded", {"text": "SECRET", "fail": True}, raise_on_error=False
+        )
+        planned = await client.call_tool("fake_guarded_planned", {}, raise_on_error=False)
+    text = " ".join(getattr(part, "text", "") for part in failed.content)
+    assert failed.is_error and text == internal_message(SERVER)
+    assert " ".join(getattr(p, "text", "") for p in planned.content) == "the fake store is down"
+    tools_log = [r.getMessage() for r in caplog.records if r.name == "fakeserver.tools"]
+    assert tools_log == [tools_log[0]] and tools_log[0].startswith(
+        "unexpected ValueError in fake_guarded at app.py:"
+    )
+    assert "SECRET" not in caplog.text
+    assert outcomes(caplog) == ["ok", "error:ToolError", "error:StoreDownError"]

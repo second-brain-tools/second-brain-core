@@ -20,7 +20,8 @@ may change the interfaces.
     rate limit; the logging set-up;
   - `remote` and `health`: HTTP options and guardrails, the transport choice, the
     middleware stack, the run calls, and `/healthz` with an optional cache;
-  - `failure`: a planned failure's sentence, or a fixed one for anything else;
+  - `failure`: a planned failure's sentence, or a fixed one for anything else, and
+    `guarded`, a tool decorator so nothing unplanned escapes a tool;
   - `recent` and `annotations`;
   - `testing`: the security regression checks each server runs on itself.
 - **The audit line names the client** (`client=`; second-brain-joplin #92): the name
